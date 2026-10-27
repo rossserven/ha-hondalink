@@ -32,6 +32,12 @@ This is early custom-component work built from a validated HondaLink Android app
 
 Choose **AcuraLink** as the brand during setup to use an Acura account. This uses the AcuraLink Android app's client credentials, headers and refresh filters.
 
+On newer (2GX) vehicles the results of a refresh or remote command are not available from the REST results endpoint used for HondaLink; the app receives them over an AWS IoT MQTT channel. For Acura accounts the integration opens that channel (`paho-mqtt`) so that:
+
+- The Refresh button returns live data (lock state, doors, windows, lights, tire pressure, fuel range) instead of only the vehicle's last cached upload.
+- Lock, unlock, and other remote commands report their real result.
+- If the channel cannot be opened the integration falls back to the REST behavior and the cached data.
+
 Engine start/stop, horn, lights, and the 12V battery sensor have not been verified on Acura vehicles.
 
 ## Installation

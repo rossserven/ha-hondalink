@@ -36,10 +36,13 @@ from .const import (
     IDENTITY_BASE,
     LEGACY_LOCK_COMMAND,
     LEGACY_UNLOCK_COMMAND,
+    PUSH_TOKEN_PATH,
 )
+from .push import HondaLinkPushClient, HondaLinkPushDisconnected, HondaLinkPushError
 
 _LOGGER = logging.getLogger(__name__)
 DASHBOARD_REFRESH_WAIT = 20
+PUSH_RETRY_DELAY = 60
 _DYNAMIC_BACKEND_ERROR_CODE = "0x01130009"
 _INVALID_SCOPE_ERROR_CODE = "0001-01-1150"
 _UNAUTHORIZED_ERROR_CODE = "0001-01-1154"
@@ -55,6 +58,10 @@ class HondaLinkAuthError(HondaLinkError):
 
 class HondaLinkCommandError(HondaLinkError):
     pass
+
+
+class HondaLinkResultUnavailable(HondaLinkError):
+    """The command was accepted but its result can't be read (e.g. the push channel dropped)."""
 
 
 @dataclass
@@ -132,6 +139,8 @@ class HondaLinkAPI:
     ) -> None:
         self.session = session
         self.brand = brand if brand in BRANDS else DEFAULT_BRAND
+        self.push: HondaLinkPushClient | None = None
+        self._push_retry_at = 0.0
         self._brand = BRANDS[self.brand]
         self.email = email
         self.password = password
@@ -211,6 +220,38 @@ class HondaLinkAPI:
             CONF_SESSION_ID: self.session_id,
         }
 
+    @property
+    def push_active(self) -> bool:
+        return self.push is not None and self.push.is_ready
+
+    async def async_start_push(self) -> None:
+        """Connect the MQTT push channel that delivers results on AcuraLink 2GX vehicles."""
+        if self.brand != BRAND_ACURA or not self.vin:
+            return
+        if self.push is None:
+            self.push = HondaLinkPushClient(self.device_id, self.vin, self._async_fetch_push_token)
+        await self.async_ensure_login()
+        await self.push.async_ensure_ready()
+
+    async def async_stop_push(self) -> None:
+        if self.push is not None:
+            await self.push.async_close()
+
+    async def async_ensure_push(self) -> None:
+        """Start the push channel if needed; on failure fall back to REST and retry later."""
+        if self.brand != BRAND_ACURA or (self.push is not None and self.push.closed):
+            return
+        if self.push_active or time.monotonic() < self._push_retry_at:
+            return
+        try:
+            await self.async_start_push()
+        except (HondaLinkError, HondaLinkPushError, OSError) as err:
+            self._push_retry_at = time.monotonic() + PUSH_RETRY_DELAY
+            _LOGGER.warning("HondaLink push channel unavailable, falling back to REST results: %s", err)
+
+    async def _async_fetch_push_token(self) -> dict[str, Any]:
+        return await self._request_api("POST", PUSH_TOKEN_PATH, json_body={"device": self.vin})
+
     async def async_get_vehicles(self) -> list[dict[str, Any]]:
         data = await self._request_api("GET", "/REST/NGT/MyVehicle/1.0")
         if _lower_status(data.get("status")) not in ("success", ""):
@@ -252,6 +293,7 @@ class HondaLinkAPI:
         vin = vin or self.vin
         if not vin:
             raise HondaLinkError("VIN is required")
+        await self.async_ensure_push()
         last_error: HondaLinkError | None = None
         filter_sets = DASHBOARD_FILTER_SETS
         if self.brand == BRAND_ACURA:
@@ -378,6 +420,7 @@ class HondaLinkAPI:
         timeout: int = 75,
         poll_interval: int = 3,
     ) -> HondaLinkCommandResult:
+        await self.async_ensure_push()
         try:
             data = await self._request_api(
                 "POST",
@@ -405,9 +448,11 @@ class HondaLinkAPI:
             # AcuraLink 2GX vehicles report command results over MQTT; the REST results
             # endpoint answers 'Unauthorized'. The command itself was accepted, so treat
             # it as submitted rather than failed.
-            if self.brand != BRAND_ACURA or not _is_unauthorized_error(err):
+            if self.brand != BRAND_ACURA or not (
+                isinstance(err, HondaLinkResultUnavailable) or _is_unauthorized_error(err)
+            ):
                 raise
-            _LOGGER.debug("Command %s/%s accepted; result not readable over REST (%s)", engine, command, err)
+            _LOGGER.debug("Command %s/%s accepted; result not readable (%s)", engine, command, err)
             result = {"status": "submitted", "responseBody": response_body}
         return HondaLinkCommandResult(request_id, result)
 
@@ -418,6 +463,9 @@ class HondaLinkAPI:
         timeout: int,
         poll_interval: int,
     ) -> dict[str, Any]:
+        if self.push_active:
+            return await self._poll_push_result(request_id, timeout)
+
         deadline = time.monotonic() + timeout
         last_data: dict[str, Any] = {}
 
@@ -439,6 +487,29 @@ class HondaLinkAPI:
             await asyncio.sleep(poll_interval)
 
         raise HondaLinkCommandError(f"Command timed out waiting for completion: {last_data}")
+
+    async def _poll_push_result(self, request_id: str, timeout: float) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout
+        try:
+            while True:
+                remaining = deadline - time.monotonic()
+                try:
+                    reported = await self.push.async_wait_result(request_id, max(remaining, 0.1))
+                except HondaLinkPushDisconnected as err:
+                    raise HondaLinkResultUnavailable(str(err)) from err
+                except HondaLinkPushError as err:
+                    raise HondaLinkCommandError(str(err)) from err
+                response_body = reported.get("responseBody") or {}
+                status = _lower_status(reported.get("status"))
+                data = {"status": reported.get("status"), "responseBody": response_body}
+                if status in ("success", "completed", "complete", "ok"):
+                    return data
+                if status in ("failure", "failed", "error"):
+                    raise HondaLinkCommandError(response_body.get("errorMessage") or str(data))
+                if remaining <= 0:
+                    raise HondaLinkCommandError(f"Command timed out waiting for completion: {data}")
+        finally:
+            self.push.release(request_id)
 
     async def _request_identity(
         self,

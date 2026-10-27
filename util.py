@@ -336,3 +336,14 @@ def any_light_on(body: dict[str, Any]) -> bool | None:
             if str(item.get("lightState")).upper() != "OFF":
                 return True
     return False if found else None
+
+
+def merge_dashboard(base: dict[str, Any], newer: dict[str, Any]) -> dict[str, Any]:
+    """Overlay ``newer`` on ``base``; empty (None) values in ``newer`` keep the value from ``base``."""
+    merged = dict(base)
+    for key, value in newer.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = merge_dashboard(merged[key], value)
+        elif value is not None and value != "":
+            merged[key] = value
+    return merged

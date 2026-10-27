@@ -88,6 +88,7 @@ BRANDS = {
 
 IDENTITY_BASE = "https://identity.services.honda.com"
 API_BASE = "https://wsc.hondaweb.com"
+PUSH_TOKEN_PATH = "/REST/CIG/services/1.0/token"
 
 HONDALINK_BUSINESS_ID = "HONDALINK CONNECT"
 HONDALINK_SYSTEM_ID = "com.honda.hondalink.cv_android"
