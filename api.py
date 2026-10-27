@@ -390,6 +390,14 @@ class HondaLinkAPI:
             {"device": self._vin(), "pin": self._pin()},
         )
 
+    async def async_request_location(self) -> HondaLinkCommandResult:
+        """Ask the vehicle for its current position (the app's Locate / Update Location)."""
+        return await self._async_cig_command(
+            "cfl",
+            "",
+            {"device": self._vin(), "pin": self._pin()},
+        )
+
     async def async_horn(self) -> HondaLinkCommandResult:
         return await self._async_cig_command(
             "cfhl",

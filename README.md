@@ -38,6 +38,8 @@ On newer (2GX) vehicles the results of a refresh or remote command are not avail
 - Lock, unlock, and other remote commands report their real result.
 - If the channel cannot be opened the integration falls back to the REST behavior and the cached data.
 
+Acura accounts also get an **Update location** button, which sends the app's Locate request. The location is not requested automatically; press the button (or call it from an automation) when you want a fresh position.
+
 Engine start/stop, horn, lights, and the 12V battery sensor have not been verified on Acura vehicles.
 
 ## Installation

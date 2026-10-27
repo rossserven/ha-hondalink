@@ -69,6 +69,9 @@ class HondaLinkDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.warning("HondaLink live dashboard refresh request failed: %s", err)
         await self.async_refresh()
 
+    async def async_update_location(self) -> None:
+        await self._run_command(self.api.async_request_location, location=True)
+
     async def async_initial_refresh(self) -> None:
         await self.async_force_refresh()
 
@@ -93,11 +96,17 @@ class HondaLinkDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_stop_horn_lights(self) -> None:
         await self._run_command(self.api.async_stop_horn_lights)
 
-    async def _run_command(self, command, *, refresh_state: bool = False) -> None:
+    async def _run_command(self, command, *, refresh_state: bool = False, location: bool = False) -> None:
         try:
-            await command()
+            result = await command()
         except HondaLinkCommandError as err:
             raise HomeAssistantError(str(err)) from err
+        if location:
+            body = (result.response or {}).get("responseBody")
+            if isinstance(body, dict) and body.get("gpsData"):
+                self._push_body = merge_dashboard(self._push_body or {}, {"gpsData": body["gpsData"]})
+            self.async_set_updated_data(self._with_push_data(self.data or {}))
+            return
         if self.api.push_active and refresh_state:
             # The cached dashboard does not reflect the new state; ask the vehicle for a live one.
             self._entry.async_create_background_task(
