@@ -28,6 +28,12 @@ This integration uses the HondaLink Android app API flow, observed while debuggi
 
 This is early custom-component work built from a validated HondaLink Android app flow observed during app debugging. It has been tested against a MY21 HondaLink telematics flow, but Honda can change these private endpoints at any time.
 
+## AcuraLink (experimental)
+
+Choose **AcuraLink** as the brand during setup to use an Acura account. This uses the AcuraLink Android app's client credentials, headers and refresh filters.
+
+Engine start/stop, horn, lights, and the 12V battery sensor have not been verified on Acura vehicles.
+
 ## Installation
 
 ### HACS

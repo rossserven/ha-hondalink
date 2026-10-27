@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from dataclasses import dataclass
@@ -12,9 +13,10 @@ import aiohttp
 
 from .const import (
     API_BASE,
-    APP_USER_AGENT,
-    CLIENT_ID,
-    CLIENT_SECRET,
+    ACURA_DASHBOARD_FILTERS,
+    BRAND_ACURA,
+    BRANDS,
+    DEFAULT_BRAND,
     CONF_ACCESS_TOKEN,
     CONF_CLIENT_REG_KEY,
     CONF_COUNTRY,
@@ -30,16 +32,17 @@ from .const import (
     DEFAULT_LOCK_COMMAND,
     DEFAULT_UNLOCK_COMMAND,
     DEVICE_DESCRIPTION,
-    HONDALINK_BUSINESS_ID,
-    HONDALINK_SYSTEM_ID,
     HONDA_HEADER_VERSION,
     IDENTITY_BASE,
     LEGACY_LOCK_COMMAND,
     LEGACY_UNLOCK_COMMAND,
 )
 
+_LOGGER = logging.getLogger(__name__)
+DASHBOARD_REFRESH_WAIT = 20
 _DYNAMIC_BACKEND_ERROR_CODE = "0x01130009"
 _INVALID_SCOPE_ERROR_CODE = "0001-01-1150"
+_UNAUTHORIZED_ERROR_CODE = "0001-01-1154"
 
 
 class HondaLinkError(Exception):
@@ -73,6 +76,10 @@ def _is_dynamic_backend_error(err: Exception) -> bool:
     return _DYNAMIC_BACKEND_ERROR_CODE in text or "Dynamic backend host not specified" in text
 
 
+def _is_unauthorized_error(err: Exception) -> bool:
+    return _UNAUTHORIZED_ERROR_CODE in str(err)
+
+
 def _is_invalid_scope_error(err: Exception) -> bool:
     text = str(err)
     return _INVALID_SCOPE_ERROR_CODE in text or "requested scope is invalid" in text.lower()
@@ -88,6 +95,9 @@ def _redact_payload(value: Any) -> Any:
                 "password",
                 "pin",
                 "client_reg_key",
+                "token",
+                "tokensignature",
+                "bearertoken",
             }:
                 redacted[key] = "**REDACTED**"
             else:
@@ -118,8 +128,11 @@ class HondaLinkAPI:
         session_id: str | None = None,
         lock_command: str = DEFAULT_LOCK_COMMAND,
         unlock_command: str = DEFAULT_UNLOCK_COMMAND,
+        brand: str = DEFAULT_BRAND,
     ) -> None:
         self.session = session
+        self.brand = brand if brand in BRANDS else DEFAULT_BRAND
+        self._brand = BRANDS[self.brand]
         self.email = email
         self.password = password
         self.pin = pin or ""
@@ -140,7 +153,7 @@ class HondaLinkAPI:
         data = await self._request_identity(
             "POST",
             "/hidas/rs/client/register",
-            data={"client_id": CLIENT_ID, "client_secret": CLIENT_SECRET},
+            data={"client_id": self._brand["client_id"], "client_secret": self._brand["client_secret"]},
         )
         try:
             self.client_reg_key = data["clientregistrationkey"]["client_reg_key"]
@@ -219,11 +232,18 @@ class HondaLinkAPI:
         vin = vin or self.vin
         if not vin:
             raise HondaLinkError("VIN is required")
-        data = await self._request_api(
-            "POST",
-            f"/REST/NGT/CIG/dbd/latest/{vin}",
-            json_body={"fromDate": "", "toDate": ""},
-        )
+        path = f"/REST/NGT/CIG/dbd/latest/{vin}"
+        dated_body = {"fromDate": "", "toDate": ""}
+        if self.brand == BRAND_ACURA:
+            # The Acura app posts an empty body.
+            try:
+                data = await self._request_api("POST", path, json_body={})
+            except HondaLinkAuthError:
+                raise
+            except HondaLinkError:
+                data = await self._request_api("POST", path, json_body=dated_body)
+        else:
+            data = await self._request_api("POST", path, json_body=dated_body)
         if _lower_status(data.get("status")) != "success":
             raise HondaLinkError(f"Dashboard request failed: {_redact_payload(data)}")
         return data
@@ -233,7 +253,10 @@ class HondaLinkAPI:
         if not vin:
             raise HondaLinkError("VIN is required")
         last_error: HondaLinkError | None = None
-        for filters in DASHBOARD_FILTER_SETS:
+        filter_sets = DASHBOARD_FILTER_SETS
+        if self.brand == BRAND_ACURA:
+            filter_sets = (ACURA_DASHBOARD_FILTERS, *DASHBOARD_FILTER_SETS)
+        for filters in filter_sets:
             body: dict[str, Any] = {"device": vin}
             if filters:
                 body["filters"] = filters
@@ -245,7 +268,8 @@ class HondaLinkAPI:
                 )
                 break
             except HondaLinkError as err:
-                if not _is_invalid_scope_error(err):
+                # AcuraLink answers an unsupported filter list with 'Unauthorized'.
+                if not (_is_invalid_scope_error(err) or (self.brand == BRAND_ACURA and _is_unauthorized_error(err))):
                     raise
                 last_error = err
         else:
@@ -264,7 +288,19 @@ class HondaLinkAPI:
         if not request_id:
             return HondaLinkCommandResult(None, data)
 
-        result = await self._poll_cig_result("dbd", request_id, timeout=60, poll_interval=3)
+        try:
+            result = await self._poll_cig_result("dbd", request_id, timeout=60, poll_interval=3)
+        except HondaLinkCommandError:
+            raise
+        except HondaLinkError as err:
+            # AcuraLink 2GX vehicles deliver refresh results over MQTT, not the REST results
+            # endpoint; the request was accepted, so give the car time to report, then the
+            # caller re-reads /dbd/latest.
+            if self.brand != BRAND_ACURA:
+                raise
+            _LOGGER.debug("Dashboard results endpoint unavailable (%s); waiting for latest data", err)
+            await asyncio.sleep(DASHBOARD_REFRESH_WAIT)
+            result = {"status": "submitted", "responseBody": response_body}
         return HondaLinkCommandResult(request_id, result)
 
     async def async_start_engine(self, *, extend: bool = False) -> HondaLinkCommandResult:
@@ -361,7 +397,18 @@ class HondaLinkAPI:
         if not request_id:
             return HondaLinkCommandResult(None, data)
 
-        result = await self._poll_cig_result(engine, request_id, timeout, poll_interval)
+        try:
+            result = await self._poll_cig_result(engine, request_id, timeout, poll_interval)
+        except HondaLinkCommandError:
+            raise
+        except HondaLinkError as err:
+            # AcuraLink 2GX vehicles report command results over MQTT; the REST results
+            # endpoint answers 'Unauthorized'. The command itself was accepted, so treat
+            # it as submitted rather than failed.
+            if self.brand != BRAND_ACURA or not _is_unauthorized_error(err):
+                raise
+            _LOGGER.debug("Command %s/%s accepted; result not readable over REST (%s)", engine, command, err)
+            result = {"status": "submitted", "responseBody": response_body}
         return HondaLinkCommandResult(request_id, result)
 
     async def _poll_cig_result(
@@ -404,7 +451,7 @@ class HondaLinkAPI:
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": APP_USER_AGENT,
+            "User-Agent": self._brand["user_agent"],
         }
         return await self._send(method, url, headers=headers, data=data)
 
@@ -463,12 +510,12 @@ class HondaLinkAPI:
             "Authorization": f"Bearer {self.access_token}",
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": APP_USER_AGENT,
+            "User-Agent": self._brand["user_agent"],
             "hondaHeaderType.version": HONDA_HEADER_VERSION,
             "hondaHeaderType.messageId": str(uuid.uuid4()),
             "hondaHeaderType.siteId": self.client_reg_key or "",
-            "hondaHeaderType.businessId": HONDALINK_BUSINESS_ID,
-            "hondaHeaderType.systemId": HONDALINK_SYSTEM_ID,
+            "hondaHeaderType.businessId": self._brand["business_id"],
+            "hondaHeaderType.systemId": self._brand["system_id"],
             "hondaHeaderType.collectedTimestamp": utc_timestamp(),
             "hondaHeaderType.collectedTimeStamp": utc_timestamp(),
             "hondaHeaderType.clientType": "Mobile",
@@ -477,6 +524,8 @@ class HondaLinkAPI:
             "hondaHeaderType.country_code": self.country,
             "hondaHeaderType.language_code": self.language,
         }
+        if self.brand == BRAND_ACURA:
+            headers["bearerToken"] = self.access_token or ""
         if self.hidas_ident:
             headers["hondaHeaderType.userId"] = self.hidas_ident
             headers["hondaHeaderType.hidasId"] = self.hidas_ident

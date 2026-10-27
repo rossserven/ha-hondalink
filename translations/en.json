@@ -3,10 +3,11 @@
     "step": {
       "user": {
         "title": "HondaLink",
-        "description": "Enter your HondaLink account, remote PIN, and optionally a VIN. If VIN is blank, the integration will try to discover vehicles from the account.",
+        "description": "Choose HondaLink or AcuraLink, then enter your account, remote PIN, and optionally a VIN. If VIN is blank, the integration will try to discover vehicles from the account.",
         "data": {
           "email": "Email",
           "password": "Password",
+          "brand": "Brand",
           "pin": "Remote PIN",
           "vin": "VIN",
           "name": "Name"

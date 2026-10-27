@@ -12,6 +12,7 @@ from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from .api import HondaLinkAPI
 from .const import (
     CONF_ACCESS_TOKEN,
+    CONF_BRAND,
     CONF_CLIENT_REG_KEY,
     CONF_COUNTRY,
     CONF_DEVICE_ID,
@@ -28,6 +29,7 @@ from .const import (
     CONF_VIN,
     DATA_API,
     DATA_COORDINATOR,
+    DEFAULT_BRAND,
     DEFAULT_LOCK_COMMAND,
     DEFAULT_UNLOCK_COMMAND,
     DOMAIN,
@@ -75,6 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         session_id=data[CONF_SESSION_ID],
         lock_command=entry.options.get(CONF_LOCK_COMMAND, DEFAULT_LOCK_COMMAND),
         unlock_command=entry.options.get(CONF_UNLOCK_COMMAND, DEFAULT_UNLOCK_COMMAND),
+        brand=data.get(CONF_BRAND, DEFAULT_BRAND),
     )
     await api.async_ensure_login()
 
