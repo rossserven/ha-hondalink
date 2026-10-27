@@ -228,7 +228,11 @@ class HondaLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class HondaLinkOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
+        # Newer Home Assistant versions provide self.config_entry and reject assigning it.
+        try:
+            self.config_entry = config_entry
+        except AttributeError:
+            pass
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
