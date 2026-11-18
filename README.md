@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="HondaLink Home Assistant integration logo" width="180">
+  <img src="assets/logo.png" alt="HondaLink & AcuraLink Home Assistant integration icon" width="180">
 </p>
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
