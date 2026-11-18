@@ -1,6 +1,6 @@
 {
   "domain": "hondalink",
-  "name": "HondaLink",
+  "name": "HondaLink & AcuraLink",
   "codeowners": ["@rossserven"],
   "config_flow": true,
   "dependencies": [],

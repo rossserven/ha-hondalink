@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "HondaLink",
+        "title": "HondaLink & AcuraLink",
         "description": "Choose HondaLink or AcuraLink, then enter your account, remote PIN, and optionally a VIN. If VIN is blank, the integration will try to discover vehicles from the account.",
         "data": {
           "email": "Email",
@@ -34,7 +34,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "HondaLink options",
+        "title": "HondaLink & AcuraLink options",
         "data": {
           "pin": "Remote PIN",
           "scan_interval": "Polling interval in minutes",
