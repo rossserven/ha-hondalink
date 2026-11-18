@@ -9,5 +9,5 @@
   "issue_tracker": "https://github.com/rossserven/ha-hondalink/issues",
   "loggers": ["custom_components.hondalink"],
   "requirements": ["paho-mqtt>=2.0.0"],
-  "version": "0.2.0"
+  "version": "0.2.1"
 }
