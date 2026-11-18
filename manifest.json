@@ -1,13 +1,13 @@
 {
   "domain": "hondalink",
   "name": "HondaLink",
-  "codeowners": ["@daviddelahoz"],
+  "codeowners": ["@rossserven"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/daviddelahoz/ha-hondalink",
+  "documentation": "https://github.com/rossserven/ha-hondalink",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/daviddelahoz/ha-hondalink/issues",
+  "issue_tracker": "https://github.com/rossserven/ha-hondalink/issues",
   "loggers": ["custom_components.hondalink"],
   "requirements": ["paho-mqtt>=2.0.0"],
-  "version": "0.1.3"
+  "version": "0.2.0"
 }

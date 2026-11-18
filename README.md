@@ -3,13 +3,15 @@
 </p>
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/github/v/release/daviddelahoz/ha-hondalink)](https://github.com/daviddelahoz/ha-hondalink/releases)
-[![License](https://img.shields.io/github/license/daviddelahoz/ha-hondalink)](LICENSE)
-[![Maintenance](https://img.shields.io/maintenance/yes/2026.svg)](https://github.com/daviddelahoz/ha-hondalink)
+[![Version](https://img.shields.io/github/v/release/rossserven/ha-hondalink)](https://github.com/rossserven/ha-hondalink/releases)
+[![License](https://img.shields.io/github/license/rossserven/ha-hondalink)](LICENSE)
+[![Maintenance](https://img.shields.io/maintenance/yes/2026.svg)](https://github.com/rossserven/ha-hondalink)
 
-# HondaLink for Home Assistant
+# HondaLink and AcuraLink for Home Assistant
 
-Unofficial Home Assistant custom integration for HondaLink MY21 telematics vehicles.
+Unofficial Home Assistant custom integration for HondaLink MY21 telematics vehicles, with added AcuraLink support.
+
+> **This is a fork** of [daviddelahoz/ha-hondalink](https://github.com/daviddelahoz/ha-hondalink) by David De La Hoz, which this project is built on. It adds AcuraLink support and an options-flow fix for current Home Assistant versions. The AcuraLink changes are also offered upstream in [daviddelahoz/ha-hondalink#13](https://github.com/daviddelahoz/ha-hondalink/pull/13); if they are merged there, this fork may be retired in favor of the original.
 
 This integration uses the HondaLink Android app API flow, observed while debugging the app, to discover vehicles, poll vehicle state, and expose supported remote commands in Home Assistant.
 
@@ -28,7 +30,7 @@ This integration uses the HondaLink Android app API flow, observed while debuggi
 
 This is early custom-component work built from a validated HondaLink Android app flow observed during app debugging. It has been tested against a MY21 HondaLink telematics flow, but Honda can change these private endpoints at any time.
 
-## AcuraLink (experimental)
+## AcuraLink
 
 Choose **AcuraLink** as the brand during setup to use an Acura account. This uses the AcuraLink Android app's client credentials, headers and refresh filters.
 
@@ -53,12 +55,20 @@ The lock and door states come from the last live refresh. If the vehicle is lock
 This repository is ready for HACS custom repository installation.
 
 1. In Home Assistant, open HACS.
-2. Go to Integrations.
-3. Open Custom repositories.
-4. Add this repository URL.
-5. Choose category `Integration`.
-6. Install `HondaLink`.
-7. Restart Home Assistant.
+2. Open the menu (top right) and choose **Custom repositories**.
+3. Add `https://github.com/rossserven/ha-hondalink` with category **Integration**.
+4. Install **HondaLink**.
+5. Restart Home Assistant (a reload is not enough).
+
+#### Switching from the original repository
+
+This fork uses the same `hondalink` integration domain, so only one of the two can be installed. Your existing setup and entities carry over.
+
+1. In HACS, remove the `daviddelahoz/ha-hondalink` repository (this removes its files; your configured integration stays in Home Assistant).
+2. Add and install this repository as above.
+3. Restart Home Assistant.
+
+HondaLink (Honda) accounts have not been tested with this fork. Users of the original integration have reported 401 errors after Honda's HondaLink 5.5.0 app update; a proposed fix is in [daviddelahoz/ha-hondalink#5](https://github.com/daviddelahoz/ha-hondalink/pull/5) and is not included here.
 
 ### Manual
 
