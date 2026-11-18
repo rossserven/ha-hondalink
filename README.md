@@ -90,9 +90,9 @@ Settings > Devices & services > Add integration > HondaLink & AcuraLink
 
 The config flow asks for:
 
-- HondaLink email
-- HondaLink password
-- Remote PIN from the HondaLink app
+- Brand: **HondaLink** or **AcuraLink**
+- Email and password for that app's account
+- Remote PIN, the same one you use for remote commands in the app
 - VIN, optional if the vehicle can be discovered automatically
 - Name, optional display name
 
@@ -100,14 +100,14 @@ If auto-discovery returns no vehicles, enter the VIN manually.
 
 ## API Flow
 
-The integration currently follows this sequence:
+HondaLink and AcuraLink use the same backend with different app credentials. The integration follows this sequence:
 
 1. Register app client with HIDAS.
 2. Generate a HIDAS bearer token.
 3. Discover vehicles from `GET /REST/NGT/MyVehicle/1.0`.
 4. Poll latest vehicle state from `POST /REST/NGT/CIG/dbd/latest/{VIN}`.
 5. Send remote CIG commands through `POST /REST/NGT/CIG/{engine}/async/{command}`.
-6. Poll command results from `GET /REST/NGT/CIG/{engine}/results/{request_id}`.
+6. Poll command results from `GET /REST/NGT/CIG/{engine}/results/{request_id}`, or, for AcuraLink on 2GX vehicles, receive them over the AWS IoT push channel (see [AcuraLink](#acuralink)).
 
 ### Token Generation
 
@@ -135,7 +135,7 @@ The default lock command is `alk`; the default unlock command is `dulk`.
 
 ## Troubleshooting
 
-### Could not connect to HondaLink
+### Could not connect
 
 Restart Home Assistant after updating the custom component, then try setup again. The config flow logs the HondaLink response in a redacted form, so check Home Assistant logs for:
 
@@ -145,7 +145,7 @@ HondaLink connection failed during config flow
 
 ### Invalid credentials or remote PIN
 
-Confirm that the same email, password, and remote PIN work in the HondaLink mobile app. Some HondaLink accounts may require accepting updated terms or completing account verification in the app before API login succeeds.
+Confirm that the same email, password, and remote PIN work in the HondaLink or AcuraLink mobile app, and that the Brand you chose matches it. Some accounts may require accepting updated terms or completing account verification in the app before API login succeeds.
 
 ### No vehicle discovered
 
@@ -153,11 +153,11 @@ Enter the VIN manually in the setup form. The integration will still try to fetc
 
 ## Security
 
-- This integration stores your HondaLink email, password, and remote PIN in the Home Assistant config entry so it can re-authenticate after token expiry.
-- The Honda app `CLIENT_ID` and `CLIENT_SECRET` values are app-level credentials observed from the HondaLink mobile app flow, not user-specific credentials. Honda ships and uses them as part of the mobile app authentication flow, which this integration mirrors.
+- This integration stores your account email, password, and remote PIN in the Home Assistant config entry so it can re-authenticate after token expiry.
+- The `CLIENT_ID` and `CLIENT_SECRET` values are app-level credentials observed from the HondaLink and AcuraLink mobile app flows, not user-specific credentials. Honda ships and uses them as part of the mobile app authentication flow, which this integration mirrors.
 - Honda may rotate or revoke those app-level credentials at any time. If that happens, authentication can stop working for all users until the integration is updated.
 - Do not share logs or diagnostics that include tokens, remote PIN, VIN, or GPS coordinates.
-- Remote commands can physically affect your vehicle. Use this only with your own HondaLink account and vehicle.
+- Remote commands can physically affect your vehicle. Use this only with your own account and vehicle.
 
 ## Support
 
@@ -167,17 +167,19 @@ To support David De La Hoz, author of the original HondaLink integration this fo
 
 ## Known Limitations
 
-- Tested against a MY21 telematics HondaLink flow.
+- HondaLink: tested by the original author against a MY21 telematics flow; not tested with this fork.
+- AcuraLink: tested on a 2023 MDX and a 2022 RDX. Engine start/stop, horn, lights, and the 12V battery sensor are unverified.
+- US accounts only. The integration uses the US apps' credentials and endpoints.
 - EV fields are exposed only when the Honda dashboard payload returns actual values.
 - Lock and unlock command behavior may vary by vehicle, subscription, market, or Honda API changes.
-- HondaLink is a private cloud API; reliability depends on Honda's service and endpoint compatibility.
+- HondaLink and AcuraLink use a private cloud API; reliability depends on Honda's service and endpoint compatibility.
 
 ## Local Development
 
 Useful validation commands:
 
-```powershell
-python -m py_compile .\api.py .\config_flow.py
+```bash
+python -m py_compile *.py
 ```
 
 HACS and hassfest workflow files are included under `.github/workflows/`.

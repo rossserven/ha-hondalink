@@ -15,15 +15,15 @@
       },
       "vehicle": {
         "title": "Select vehicle",
-        "description": "Choose the Honda vehicle to add.",
+        "description": "Choose the vehicle to add.",
         "data": {
           "vin": "Vehicle"
         }
       }
     },
     "error": {
-      "cannot_connect": "Could not connect to HondaLink.",
-      "invalid_auth": "Invalid HondaLink credentials or remote PIN.",
+      "cannot_connect": "Could not connect to HondaLink or AcuraLink.",
+      "invalid_auth": "Invalid email, password, or remote PIN.",
       "unknown": "Unexpected error.",
       "vin_required": "No vehicle was discovered. Enter the VIN manually."
     },
