@@ -42,7 +42,9 @@ Acura accounts also get an **Update location** button, which sends the app's Loc
 
 Tested on a 2023 Acura MDX and a 2022 Acura RDX. Engine start/stop, horn, lights, and the 12V battery sensor have not been verified on Acura vehicles.
 
-After installing or updating, **restart Home Assistant** (a reload is not enough). The integration now depends on `paho-mqtt`, and the **Brand** option only appears in the setup form after a restart.
+After installing or updating, **restart Home Assistant** (a reload is not enough). The integration now depends on `paho-mqtt` 2.x, which needs Home Assistant 2025.3 or newer, and the **Brand** option only appears in the setup form after a restart.
+
+The lock and door states come from the last live refresh. If the vehicle is locked or unlocked another way (key fob, the app), Home Assistant shows the new state after the next Refresh.
 
 ## Installation
 

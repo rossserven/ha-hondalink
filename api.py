@@ -115,6 +115,19 @@ def _redact_payload(value: Any) -> Any:
     return value
 
 
+def _without_location(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _without_location(item) for key, item in value.items() if str(key).lower() != "gpsdata"}
+    if isinstance(value, list):
+        return [_without_location(item) for item in value]
+    return value
+
+
+def _error_detail(value: Any) -> Any:
+    """Server data for an error message, without credentials or the vehicle's location."""
+    return _without_location(_redact_payload(value))
+
+
 class HondaLinkAPI:
     def __init__(
         self,
@@ -245,7 +258,7 @@ class HondaLinkAPI:
             return
         try:
             await self.async_start_push()
-        except (HondaLinkError, HondaLinkPushError, OSError) as err:
+        except (HondaLinkError, HondaLinkPushError, aiohttp.ClientError, asyncio.TimeoutError, OSError) as err:
             self._push_retry_at = time.monotonic() + PUSH_RETRY_DELAY
             _LOGGER.warning("HondaLink push channel unavailable, falling back to REST results: %s", err)
 
@@ -324,7 +337,7 @@ class HondaLinkAPI:
         status = _lower_status(data.get("status"))
 
         if status not in ("success", "in_progress", ""):
-            message = response_body.get("errorMessage") or str(data)
+            message = response_body.get("errorMessage") or str(_error_detail(data))
             raise HondaLinkCommandError(message)
 
         if not request_id:
@@ -442,7 +455,7 @@ class HondaLinkAPI:
         status = _lower_status(data.get("status"))
 
         if status not in ("success", ""):
-            message = response_body.get("errorMessage") or str(data)
+            message = response_body.get("errorMessage") or str(_error_detail(data))
             raise HondaLinkCommandError(message)
 
         if not request_id:
@@ -489,12 +502,12 @@ class HondaLinkAPI:
             if status in ("success", "completed", "complete", "ok"):
                 return data
             if status in ("failure", "failed", "error"):
-                message = response_body.get("errorMessage") or str(data)
+                message = response_body.get("errorMessage") or str(_error_detail(data))
                 raise HondaLinkCommandError(message)
 
             await asyncio.sleep(poll_interval)
 
-        raise HondaLinkCommandError(f"Command timed out waiting for completion: {last_data}")
+        raise HondaLinkCommandError(f"Command timed out waiting for completion: {_error_detail(last_data)}")
 
     async def _poll_push_result(self, request_id: str, timeout: float) -> dict[str, Any]:
         deadline = time.monotonic() + timeout
@@ -513,9 +526,9 @@ class HondaLinkAPI:
                 if status in ("success", "completed", "complete", "ok"):
                     return data
                 if status in ("failure", "failed", "error"):
-                    raise HondaLinkCommandError(response_body.get("errorMessage") or str(data))
+                    raise HondaLinkCommandError(response_body.get("errorMessage") or str(_error_detail(data)))
                 if remaining <= 0:
-                    raise HondaLinkCommandError(f"Command timed out waiting for completion: {data}")
+                    raise HondaLinkCommandError(f"Command timed out waiting for completion: {_error_detail(data)}")
         finally:
             self.push.release(request_id)
 

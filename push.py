@@ -60,6 +60,7 @@ class HondaLinkPushClient:
         self._ready = asyncio.Event()
         self._start_lock = asyncio.Lock()
         self._suback_count = 0
+        self._granted_count = 0
         self._queues: OrderedDict[str, asyncio.Queue] = OrderedDict()
         self._thread_lock = threading.Lock()
 
@@ -132,7 +133,9 @@ class HondaLinkPushClient:
 
     async def _async_get_token(self) -> tuple[str, str]:
         data = await self._fetch_token()
-        body = data.get("responseBody") or {}
+        body = data.get("responseBody") if isinstance(data, dict) else None
+        if not isinstance(body, dict):
+            body = {}
         token, signature = body.get("token"), body.get("tokenSignature")
         if not token or not signature:
             raise HondaLinkPushError("Push channel token request did not return a token")
@@ -190,19 +193,32 @@ class HondaLinkPushClient:
 
     def _on_connect(self, client, userdata, flags, reason_code, properties) -> None:
         if reason_code.is_failure:
+            # The token is fixed in the websocket headers, so automatic reconnects would keep
+            # being refused; stop here and let the next async_ensure_ready fetch a new token.
             _LOGGER.warning("HondaLink push channel connection refused: %s", reason_code)
+            client.disconnect()
             return
         with self._thread_lock:
             self._suback_count = 0
+            self._granted_count = 0
         for topic, qos in self._topics():
             client.subscribe(topic, qos=qos)
 
     def _on_subscribe(self, client, userdata, mid, reason_codes, properties) -> None:
+        refused = [code for code in reason_codes if code.is_failure]
+        if refused:
+            _LOGGER.warning("HondaLink push channel subscription refused: %s", refused)
         with self._thread_lock:
             self._suback_count += 1
+            self._granted_count += len(reason_codes) - len(refused)
             done = self._suback_count >= len(FEATURES)
-        if done:
+            granted = self._granted_count
+        if done and granted:
             self._call_in_loop(self._ready.set)
+        elif done:
+            # Nothing to listen on; the connect times out and the integration falls back to
+            # REST results.
+            _LOGGER.warning("HondaLink push channel has no subscriptions; using REST results")
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties) -> None:
         if reason_code.is_failure:
@@ -212,10 +228,13 @@ class HondaLinkPushClient:
         self._call_in_loop(self._ready.clear)
 
     def _on_message(self, client, userdata, message) -> None:
+        # An exception here would end paho's network thread, so ignore anything unexpected.
         try:
             payload = json.loads(message.payload.decode())
             reported = (payload.get("state") or {}).get("reported") or {}
         except (ValueError, AttributeError):
+            return
+        if not isinstance(reported, dict):
             return
         request_id = reported.get("cigServiceRequestId")
         if request_id:

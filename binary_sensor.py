@@ -68,7 +68,9 @@ BINARY_SENSORS: tuple[HondaLinkBinarySensorDescription, ...] = (
         key="tire_pressure_low",
         translation_key="tire_pressure_low",
         device_class=BinarySensorDeviceClass.PROBLEM,
-        value_fn=lambda body: any(lamp.get("lampName") == "PUNCTURE_LAMP" for lamp in active_warning_lamps(body)),
+        value_fn=lambda body: any(lamp.get("lampName") == "PUNCTURE_LAMP" for lamp in active_warning_lamps(body))
+        if get_path(body, "warningLamps.data") is not None
+        else None,
     ),
     HondaLinkBinarySensorDescription(
         key="maintenance_due",

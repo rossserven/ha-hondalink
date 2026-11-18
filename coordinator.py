@@ -28,6 +28,10 @@ class HondaLinkDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._entry = entry
         self.vin = entry.data[CONF_VIN]
         self._push_body: dict[str, Any] | None = None
+        # Last Update location result, and the cached position when it arrived. It is kept until
+        # the cached dashboard reports a different position (the vehicle uploaded a newer one).
+        self._location: tuple[dict[str, Any], Any] | None = None
+        self._cached_gps: Any = None
         interval = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
         super().__init__(
             hass,
@@ -41,19 +45,29 @@ class HondaLinkDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data = await self.api.async_get_dashboard_latest(self.vin)
         except HondaLinkError as err:
             raise UpdateFailed(str(err)) from err
+        self._cached_gps = status_body(data).get("gpsData")
         return self._with_push_data(data)
 
     def _with_push_data(self, data: dict[str, Any]) -> dict[str, Any]:
         """Overlay the last live (push) refresh on the cached dashboard data, newest value wins."""
-        if not self._push_body:
+        if not self._push_body and not self._location:
             return data
         cached = status_body(data)
         cached_time = _as_utc(parse_iso_datetime(cached.get("timestamp")))
-        push_time = _as_utc(parse_iso_datetime(self._push_body.get("timestamp")))
-        if cached_time and push_time and cached_time > push_time:
-            merged = merge_dashboard(self._push_body, cached)
-        else:
-            merged = merge_dashboard(cached, self._push_body)
+        merged = cached
+        if self._push_body:
+            push_time = _as_utc(parse_iso_datetime(self._push_body.get("timestamp")))
+            if cached_time and push_time and cached_time > push_time:
+                merged = merge_dashboard(self._push_body, cached)
+            else:
+                merged = merge_dashboard(cached, self._push_body)
+        if self._location:
+            gps, cached_gps_then = self._location
+            if self._cached_gps and self._cached_gps != cached_gps_then:
+                # The vehicle has uploaded a new position since Update location ran.
+                self._location = None
+            else:
+                merged = merge_dashboard(merged, {"gpsData": gps})
         return {**data, "responseBody": merged}
 
     async def async_force_refresh(self) -> None:
@@ -62,9 +76,10 @@ class HondaLinkDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if self.api.push_active:
                 body = (result.response or {}).get("responseBody")
                 if isinstance(body, dict) and body.get("timestamp"):
-                    # Merge, so values the dashboard result leaves empty (e.g. the last
-                    # location from Update location) are kept.
+                    # Merge, so values the dashboard result leaves empty are kept.
                     self._push_body = merge_dashboard(self._push_body or {}, body)
+                    if body.get("gpsData"):
+                        self._location = None
         except HondaLinkError as err:
             _LOGGER.warning("HondaLink live dashboard refresh request failed: %s", err)
         await self.async_refresh()
@@ -104,7 +119,7 @@ class HondaLinkDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if location:
             body = (result.response or {}).get("responseBody")
             if isinstance(body, dict) and body.get("gpsData"):
-                self._push_body = merge_dashboard(self._push_body or {}, {"gpsData": body["gpsData"]})
+                self._location = (body["gpsData"], self._cached_gps)
             self.async_set_updated_data(self._with_push_data(self.data or {}))
             return
         if self.api.push_active and refresh_state:
