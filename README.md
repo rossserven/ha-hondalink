@@ -161,10 +161,6 @@ Enter the VIN manually in the setup form. The integration will still try to fetc
 
 ## Support
 
-If this fork is useful to you, you can sponsor its maintenance:
-
-<a href="https://github.com/sponsors/rossserven"><img src="https://img.shields.io/badge/Sponsor-rossserven-ea4aaa?logo=githubsponsors&logoColor=white" alt="Sponsor rossserven on GitHub" height="28"></a>
-
 To support David De La Hoz, author of the original HondaLink integration this fork is built on:
 
 <a href="https://www.buymeacoffee.com/daviddelahoz" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee for David De La Hoz" style="height: 60px !important;width: 217px !important;" ></a>
