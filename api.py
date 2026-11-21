@@ -448,6 +448,8 @@ class HondaLinkAPI:
                 f"/REST/NGT/CIG/{engine}/async/{command}",
                 json_body=body,
             )
+        except HondaLinkAuthError:
+            raise
         except HondaLinkError as err:
             raise HondaLinkCommandError(str(err)) from err
         response_body = data.get("responseBody") or {}

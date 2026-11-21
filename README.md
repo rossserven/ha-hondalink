@@ -42,7 +42,7 @@ On newer (2GX) vehicles the results of a refresh or remote command are not avail
 
 Acura accounts also get an **Update location** button, which sends the app's Locate request. The location is not requested automatically; press the button (or call it from an automation) when you want a fresh position.
 
-Tested on a 2023 Acura MDX and a 2022 Acura RDX. Engine start/stop, horn, lights, and the 12V battery sensor have not been verified on Acura vehicles.
+Tested on a 2023 Acura MDX and a 2022 Acura RDX. Engine start, engine stop, horn, lights, and stop horn/lights were verified on the 2023 MDX. The AcuraLink dashboard data has no 12V battery field, so on Acura vehicles the 12V battery status sensor stays unknown unless the car reports a 12V battery warning lamp.
 
 After installing or updating, **restart Home Assistant** (a reload is not enough). The integration now depends on `paho-mqtt` 2.x, which needs Home Assistant 2025.3 or newer, and the **Brand** option only appears in the setup form after a restart.
 
@@ -133,6 +133,8 @@ After setup, open the integration options to change:
 
 The default lock command is `alk`; the default unlock command is `dulk`.
 
+Saving the options reloads the integration, so changes apply right away.
+
 ## Troubleshooting
 
 ### Could not connect
@@ -146,6 +148,10 @@ HondaLink connection failed during config flow
 ### Invalid credentials or remote PIN
 
 Confirm that the same email, password, and remote PIN work in the HondaLink or AcuraLink mobile app, and that the Brand you chose matches it. Some accounts may require accepting updated terms or completing account verification in the app before API login succeeds.
+
+### Reauthentication required
+
+If the account password changes or login is rejected, the integration stops polling (to avoid repeated login attempts) and Home Assistant shows a **Reauthentication required** notice under Settings > Devices & services. Open it and enter the current password.
 
 ### No vehicle discovered
 
@@ -168,7 +174,7 @@ To support David De La Hoz, author of the original HondaLink integration this fo
 ## Known Limitations
 
 - HondaLink: tested by the original author against a MY21 telematics flow; not tested with this fork.
-- AcuraLink: tested on a 2023 MDX and a 2022 RDX. Engine start/stop, horn, lights, and the 12V battery sensor are unverified.
+- AcuraLink: tested on a 2023 MDX and a 2022 RDX. Engine start, engine stop, horn, lights, and stop horn/lights verified on the 2023 MDX. The 12V battery status sensor only shows a value when the car reports a 12V battery warning lamp.
 - US accounts only. The integration uses the US apps' credentials and endpoints.
 - EV fields are exposed only when the Honda dashboard payload returns actual values.
 - Lock and unlock command behavior may vary by vehicle, subscription, market, or Honda API changes.
