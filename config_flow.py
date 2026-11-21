@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Any
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -219,6 +221,69 @@ class HondaLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_DEVICE_ID: api.device_id,
             CONF_SESSION_ID: api.session_id,
         }
+
+    async def async_step_reauth(self, entry_data: dict[str, Any]):
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None):
+        errors: dict[str, str] = {}
+        entry = self._get_reauth_entry()
+
+        if user_input is not None:
+            email = user_input[CONF_EMAIL].strip()
+            password = user_input[CONF_PASSWORD]
+            session = async_get_clientsession(self.hass)
+            api = HondaLinkAPI(
+                session,
+                email=email,
+                password=password,
+                pin=entry.options.get(CONF_PIN, entry.data.get(CONF_PIN)),
+                vin=entry.data.get(CONF_VIN),
+                client_reg_key=entry.data.get(CONF_CLIENT_REG_KEY),
+                country=entry.data.get(CONF_COUNTRY, "US"),
+                language=entry.data.get(CONF_LANGUAGE, "en"),
+                device_id=entry.data.get(CONF_DEVICE_ID),
+                session_id=entry.data.get(CONF_SESSION_ID),
+                brand=entry.data.get(CONF_BRAND, DEFAULT_BRAND),
+            )
+            try:
+                await api.async_login()
+                vehicles = await api.async_get_vehicles()
+            except HondaLinkAuthError as err:
+                _LOGGER.warning("HondaLink reauthentication failed: %s", err)
+                errors["base"] = "invalid_auth"
+            except (HondaLinkError, aiohttp.ClientError, asyncio.TimeoutError) as err:
+                _LOGGER.warning("HondaLink connection failed during reauthentication: %s", err)
+                errors["base"] = "cannot_connect"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error during HondaLink reauthentication")
+                errors["base"] = "unknown"
+            else:
+                vin = str(entry.unique_id or entry.data.get(CONF_VIN, "")).upper()
+                found = any(str(item.get("VIN", "")).upper() == vin for item in vehicles)
+                if not found:
+                    try:
+                        found = bool(await api.async_get_vehicle_by_vin(vin))
+                    except HondaLinkError:
+                        found = False
+                if not found:
+                    return self.async_abort(reason="wrong_account")
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={
+                        CONF_EMAIL: email,
+                        CONF_PASSWORD: password,
+                        **api.export_auth_data(),
+                    },
+                )
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_EMAIL, default=entry.data.get(CONF_EMAIL, "")): str,
+                vol.Required(CONF_PASSWORD): str,
+            }
+        )
+        return self.async_show_form(step_id="reauth_confirm", data_schema=schema, errors=errors)
 
     @staticmethod
     @callback

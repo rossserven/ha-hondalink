@@ -13,6 +13,14 @@
           "name": "Name"
         }
       },
+      "reauth_confirm": {
+        "title": "Reauthenticate HondaLink & AcuraLink",
+        "description": "Your HondaLink or AcuraLink sign-in is no longer valid. Enter your account email and password again.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      },
       "vehicle": {
         "title": "Select vehicle",
         "description": "Choose the vehicle to add.",
@@ -28,7 +36,9 @@
       "vin_required": "No vehicle was discovered. Enter the VIN manually."
     },
     "abort": {
-      "already_configured": "This vehicle is already configured."
+      "already_configured": "This vehicle is already configured.",
+      "reauth_successful": "Reauthentication was successful.",
+      "wrong_account": "This account does not include the vehicle configured in this entry."
     }
   },
   "options": {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 import aiohttp
@@ -7,9 +8,10 @@ import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
-from .api import HondaLinkAPI
+from .api import HondaLinkAPI, HondaLinkAuthError, HondaLinkError
 from .const import (
     CONF_ACCESS_TOKEN,
     CONF_BRAND,
@@ -35,6 +37,8 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import HondaLinkDataUpdateCoordinator
+
+DATA_OPTIONS = "options_snapshot"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -79,7 +83,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         unlock_command=entry.options.get(CONF_UNLOCK_COMMAND, DEFAULT_UNLOCK_COMMAND),
         brand=data.get(CONF_BRAND, DEFAULT_BRAND),
     )
-    await api.async_ensure_login()
+    try:
+        await api.async_ensure_login()
+    except HondaLinkAuthError as err:
+        raise ConfigEntryAuthFailed(str(err)) from err
+    except (HondaLinkError, aiohttp.ClientError, asyncio.TimeoutError) as err:
+        raise ConfigEntryNotReady(str(err)) from err
 
     auth_data = api.export_auth_data()
     if any(data.get(key) != value for key, value in auth_data.items()):
@@ -104,7 +113,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Registered after setup's own entry updates above so they do not trigger a reload.
+    hass.data[DOMAIN][entry.entry_id][DATA_OPTIONS] = dict(entry.options)
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload so changed options (PIN, polling interval, lock commands) take effect."""
+    stored = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if stored is not None and stored.get(DATA_OPTIONS) == dict(entry.options):
+        return  # Only data changed (tokens, reauth); reauth reloads the entry itself.
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

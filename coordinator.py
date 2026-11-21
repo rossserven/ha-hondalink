@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 from typing import Any
 
+import aiohttp
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import HondaLinkAPI, HondaLinkCommandError, HondaLinkError
+from .api import HondaLinkAPI, HondaLinkAuthError, HondaLinkCommandError, HondaLinkError
 from .const import CONF_SCAN_INTERVAL, CONF_VIN, DEFAULT_SCAN_INTERVAL, DOMAIN
 from .util import merge_dashboard, parse_iso_datetime, status_body
 
@@ -42,8 +45,18 @@ class HondaLinkDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
-            data = await self.api.async_get_dashboard_latest(self.vin)
+            try:
+                data = await self.api.async_get_dashboard_latest(self.vin)
+            except HondaLinkAuthError:
+                # The token may be revoked while the password still works: log in once and retry.
+                self.api.access_token = None
+                try:
+                    await self.api.async_login()
+                except HondaLinkAuthError as err:
+                    raise ConfigEntryAuthFailed(str(err)) from err
+                data = await self.api.async_get_dashboard_latest(self.vin)
         except HondaLinkError as err:
+            # Includes an auth error after a successful login: credentials are good, so not a reauth case.
             raise UpdateFailed(str(err)) from err
         self._cached_gps = status_body(data).get("gpsData")
         return self._with_push_data(data)
@@ -114,6 +127,17 @@ class HondaLinkDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _run_command(self, command, *, refresh_state: bool = False, location: bool = False) -> None:
         try:
             result = await command()
+        except HondaLinkAuthError as err:
+            # Never resend the command; refresh the session so the next attempt can work.
+            self.api.access_token = None
+            try:
+                await self.api.async_login()
+            except HondaLinkAuthError as login_err:
+                self._entry.async_start_reauth(self.hass)
+                raise HomeAssistantError("HondaLink sign-in failed; reauthentication required") from login_err
+            except (HondaLinkError, aiohttp.ClientError, asyncio.TimeoutError) as login_err:
+                raise HomeAssistantError(f"HondaLink could not refresh the session: {login_err}") from login_err
+            raise HomeAssistantError("HondaLink session expired; check the vehicle's status before sending the command again") from err
         except HondaLinkCommandError as err:
             raise HomeAssistantError(str(err)) from err
         if location:
